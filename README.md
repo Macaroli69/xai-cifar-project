@@ -45,15 +45,15 @@ Install dependencies with:
 
 ```bash
 pip install -r requirements.txt
+```
 
-
-How to Run
+## How to run
 1. Train or load the model
 
 Run:
-
+```bash
 python main.py
-
+```
 You will be asked:
 
 Type T to train a new model
@@ -66,9 +66,9 @@ saved_models/simple_cnn.pth
 2. Run consistency testing
 
 After a model has been trained and saved, run:
-
+```bash
 python consistency_test.py
-
+```
 This will test:
 
 30 images
@@ -82,7 +82,18 @@ It also separates results into:
 all images
 correct predictions only
 incorrect predictions only
-Notes
+
+## Consistency Method
+
+Consistency is measured by comparing explanation maps from multiple runs of the same method on the same image.
+
+For each image, the explanation method is run multiple times. Then every pair of explanation maps is compared using cosine similarity.
+
+All pairwise similarity scores are averaged to get a final consistency score for that image.
+
+A higher score means the method gives more similar explanations across runs, while a lower score means the explanations change more between runs.
+
+## Notes
 The dataset used is CIFAR 10
 The model is a simple CNN for classifying 10 image classes
 Grad CAM is deterministic, so it will usually have very high consistency
