@@ -7,13 +7,17 @@ from model.cnn import SimpleCNN
 from utils.data_loader import load_data
 from methods.gradcam import get_gradcam_map
 from methods.lime_explain import get_lime_map
+from methods.integrated_gradients import get_integrated_gradients_map
 from methods.shap_explain import get_shap_map
 from utils.consistency_utils import average_pairwise_similarity
 
 MODEL_PATH = "saved_models/simple_cnn.pth"
 
+# Change these values to test more or fewer images and runs per image
+# More images are generally better for more reliable results compared to runs
+# Keep in mind this scales as O(n^2), so 100 runs would be 10,000 comparisons per image
 NUM_IMAGES = 30
-NUM_RUNS = 10
+NUM_RUNS = 5
 
 # CIFAR-10 class names
 class_names = [
@@ -34,11 +38,24 @@ def format_score(value):
     return f"{value:.4f}"
 
 
+def collect_test_images(testloader, num_images):
+    collected_images = []
+    collected_labels = []
+
+    for batch_images, batch_labels in testloader:
+        for image, label in zip(batch_images, batch_labels):
+            collected_images.append(image)
+            collected_labels.append(label.item())
+
+            if len(collected_images) == num_images:
+                return collected_images, collected_labels
+
+    return collected_images, collected_labels
+
+
 def main():
-    # load data
     trainloader, testloader = load_data()
 
-    # load model
     model = SimpleCNN()
 
     if not os.path.exists(MODEL_PATH):
@@ -46,40 +63,42 @@ def main():
         print("Train the model first using main.py")
         return
 
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device("cpu")))
+    model.load_state_dict(torch.load(MODEL_PATH))
     model.eval()
     print(f"Loaded model from {MODEL_PATH}")
 
-    # get test images
-    images, labels = next(iter(testloader))
+    images, labels = collect_test_images(testloader, NUM_IMAGES)
 
-    # overall scores
+    if len(images) < NUM_IMAGES:
+        print(f"Only found {len(images)} test images, not {NUM_IMAGES}")
+        return
+
     gradcam_scores = []
     lime_scores = []
+    ig_scores = []
     shap_scores = []
 
-    # correct-only scores
     gradcam_correct_scores = []
     lime_correct_scores = []
+    ig_correct_scores = []
     shap_correct_scores = []
 
-    # incorrect-only scores
     gradcam_incorrect_scores = []
     lime_incorrect_scores = []
+    ig_incorrect_scores = []
     shap_incorrect_scores = []
 
     correct_count = 0
     incorrect_count = 0
 
     for i in range(NUM_IMAGES):
-        print("\n==============================")
+        print("\n========================================")
         print(f"Testing Image {i + 1}/{NUM_IMAGES}")
-        print("==============================")
+        print("========================================")
 
         image_tensor = images[i]
-        true_label = labels[i].item()
+        true_label = labels[i]
 
-        # get model prediction once for correctness check
         with torch.no_grad():
             output = model(image_tensor.unsqueeze(0))
             predicted_label = torch.argmax(output, dim=1).item()
@@ -95,7 +114,9 @@ def main():
         else:
             incorrect_count += 1
 
+        # -------------------------
         # Grad-CAM
+        # -------------------------
         gradcam_maps = []
         for run in range(NUM_RUNS):
             heatmap, _ = get_gradcam_map(model, image_tensor)
@@ -103,14 +124,16 @@ def main():
 
         gradcam_score = average_pairwise_similarity(gradcam_maps)
         gradcam_scores.append(gradcam_score)
-        print(f"Grad-CAM consistency: {gradcam_score:.4f}")
+        print(f"Grad-CAM consistency:             {gradcam_score:.4f}")
 
         if is_correct:
             gradcam_correct_scores.append(gradcam_score)
         else:
             gradcam_incorrect_scores.append(gradcam_score)
 
+        # -------------------------
         # LIME
+        # -------------------------
         lime_maps = []
         for run in range(NUM_RUNS):
             random.seed(None)
@@ -121,42 +144,63 @@ def main():
 
         lime_score = average_pairwise_similarity(lime_maps)
         lime_scores.append(lime_score)
-        print(f"LIME consistency:     {lime_score:.4f}")
+        print(f"LIME consistency:                 {lime_score:.4f}")
 
         if is_correct:
             lime_correct_scores.append(lime_score)
         else:
             lime_incorrect_scores.append(lime_score)
 
+        # -------------------------
+        # Integrated Gradients
+        # -------------------------
+        ig_maps = []
+        for run in range(NUM_RUNS):
+            heatmap, _ = get_integrated_gradients_map(model, image_tensor)
+            ig_maps.append(heatmap)
+
+        ig_score = average_pairwise_similarity(ig_maps)
+        ig_scores.append(ig_score)
+        print(f"Integrated Gradients consistency: {ig_score:.4f}")
+
+        if is_correct:
+            ig_correct_scores.append(ig_score)
+        else:
+            ig_incorrect_scores.append(ig_score)
+
+        # -------------------------
         # SHAP
+        # -------------------------
         shap_maps = []
         for run in range(NUM_RUNS):
             random.seed(None)
             np.random.seed(None)
 
-            shap_map, _ = get_shap_map(model, image_tensor)
-            shap_maps.append(shap_map)
+            heatmap, _ = get_shap_map(model, image_tensor)
+            shap_maps.append(heatmap)
 
         shap_score = average_pairwise_similarity(shap_maps)
         shap_scores.append(shap_score)
-        print(f"SHAP consistency:     {shap_score:.4f}")
+        print(f"SHAP consistency:                 {shap_score:.4f}")
 
         if is_correct:
             shap_correct_scores.append(shap_score)
         else:
             shap_incorrect_scores.append(shap_score)
 
-    # Final Results
     overall_gradcam = safe_mean(gradcam_scores)
     overall_lime = safe_mean(lime_scores)
+    overall_ig = safe_mean(ig_scores)
     overall_shap = safe_mean(shap_scores)
 
     correct_gradcam = safe_mean(gradcam_correct_scores)
     correct_lime = safe_mean(lime_correct_scores)
+    correct_ig = safe_mean(ig_correct_scores)
     correct_shap = safe_mean(shap_correct_scores)
 
     incorrect_gradcam = safe_mean(gradcam_incorrect_scores)
     incorrect_lime = safe_mean(lime_incorrect_scores)
+    incorrect_ig = safe_mean(ig_incorrect_scores)
     incorrect_shap = safe_mean(shap_incorrect_scores)
 
     print("\n========================================")
@@ -168,19 +212,22 @@ def main():
     print("========================================")
 
     print("\nALL IMAGES")
-    print(f"Grad-CAM: {format_score(overall_gradcam)}")
-    print(f"LIME:     {format_score(overall_lime)}")
-    print(f"SHAP:     {format_score(overall_shap)}")
+    print(f"Grad-CAM:             {format_score(overall_gradcam)}")
+    print(f"LIME:                 {format_score(overall_lime)}")
+    print(f"Integrated Gradients: {format_score(overall_ig)}")
+    print(f"SHAP:                 {format_score(overall_shap)}")
 
     print("\nCORRECT PREDICTIONS ONLY")
-    print(f"Grad-CAM: {format_score(correct_gradcam)}")
-    print(f"LIME:     {format_score(correct_lime)}")
-    print(f"SHAP:     {format_score(correct_shap)}")
+    print(f"Grad-CAM:             {format_score(correct_gradcam)}")
+    print(f"LIME:                 {format_score(correct_lime)}")
+    print(f"Integrated Gradients: {format_score(correct_ig)}")
+    print(f"SHAP:                 {format_score(correct_shap)}")
 
     print("\nINCORRECT PREDICTIONS ONLY")
-    print(f"Grad-CAM: {format_score(incorrect_gradcam)}")
-    print(f"LIME:     {format_score(incorrect_lime)}")
-    print(f"SHAP:     {format_score(incorrect_shap)}")
+    print(f"Grad-CAM:             {format_score(incorrect_gradcam)}")
+    print(f"LIME:                 {format_score(incorrect_lime)}")
+    print(f"Integrated Gradients: {format_score(incorrect_ig)}")
+    print(f"SHAP:                 {format_score(incorrect_shap)}")
     print("========================================")
 
 
