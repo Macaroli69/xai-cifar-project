@@ -83,6 +83,16 @@ all images
 correct predictions only
 incorrect predictions only
 
+## Consistency Method
+
+Consistency is measured by comparing explanation maps from multiple runs of the same method on the same image.
+
+For each image, the explanation method is run multiple times. Then every pair of explanation maps is compared using cosine similarity.
+
+All pairwise similarity scores are averaged to get a final consistency score for that image.
+
+A higher score means the method gives more similar explanations across runs, while a lower score means the explanations change more between runs.
+
 ## Notes
 The dataset used is CIFAR 10
 The model is a simple CNN for classifying 10 image classes
