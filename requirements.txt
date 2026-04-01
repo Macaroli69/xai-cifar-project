@@ -6,3 +6,5 @@ captum
 lime
 shap
 opencv-python==4.10.0.84
+scikit-image
+Pillow

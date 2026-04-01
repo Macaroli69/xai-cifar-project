@@ -22,7 +22,7 @@ def main():
     os.makedirs("saved_models", exist_ok=True)
 
     # Step 3: Ask user whether to train a new model or load saved model
-    choice = input("Type 'T' to train a new model or 'L' to use saved model: (T/L)").strip().lower()
+    choice = input("Type 'T' to train a new model or 'L' to use saved model: (T/L) ").strip().lower()
 
     if choice == "t":
         print("Training new model...")
@@ -31,7 +31,12 @@ def main():
         print(f"Model saved to {MODEL_PATH}")
 
     elif choice == "l":
-        model.load_state_dict(torch.load(MODEL_PATH))
+        if not os.path.exists(MODEL_PATH):
+            print(f"Saved model not found at {MODEL_PATH}")
+            print("Train the model first by choosing 'T'.")
+            return
+
+        model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device("cpu")))
         model.eval()
         print(f"Loaded model from {MODEL_PATH}")
 
@@ -42,8 +47,8 @@ def main():
     # Step 4: Get one batch of test images
     images, labels = next(iter(testloader))
 
-    # Show the next 1 image
-    num_images = 1
+    # Show the next 3 images
+    num_images = 3
 
     for i in range(num_images):
         print(f"\n--- Image {i + 1} ---")
@@ -61,6 +66,5 @@ def main():
         explain_with_shap(model, image_tensor, true_label)
 
 
-# Double check that this is the main module being run
 if __name__ == "__main__":
     main()

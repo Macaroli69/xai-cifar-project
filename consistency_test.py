@@ -46,7 +46,7 @@ def main():
         print("Train the model first using main.py")
         return
 
-    model.load_state_dict(torch.load(MODEL_PATH))
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device("cpu")))
     model.eval()
     print(f"Loaded model from {MODEL_PATH}")
 
@@ -95,9 +95,7 @@ def main():
         else:
             incorrect_count += 1
 
-        # -------------------------
-        # Grad-CAM (deterministic)
-        # -------------------------
+        # Grad-CAM
         gradcam_maps = []
         for run in range(NUM_RUNS):
             heatmap, _ = get_gradcam_map(model, image_tensor)
@@ -112,9 +110,7 @@ def main():
         else:
             gradcam_incorrect_scores.append(gradcam_score)
 
-        # -------------------------
-        # LIME (random)
-        # -------------------------
+        # LIME
         lime_maps = []
         for run in range(NUM_RUNS):
             random.seed(None)
@@ -132,9 +128,7 @@ def main():
         else:
             lime_incorrect_scores.append(lime_score)
 
-        # -------------------------
-        # SHAP (semi-random)
-        # -------------------------
+        # SHAP
         shap_maps = []
         for run in range(NUM_RUNS):
             random.seed(None)
@@ -152,9 +146,7 @@ def main():
         else:
             shap_incorrect_scores.append(shap_score)
 
-    # -------------------------
     # Final Results
-    # -------------------------
     overall_gradcam = safe_mean(gradcam_scores)
     overall_lime = safe_mean(lime_scores)
     overall_shap = safe_mean(shap_scores)
