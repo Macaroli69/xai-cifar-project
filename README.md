@@ -62,6 +62,7 @@ Type L to load the saved model
 If you train a model, it will be saved to:
 
 saved_models/simple_cnn.pth
+
 2. Run consistency testing
 
 After a model has been trained and saved, run:
@@ -72,7 +73,7 @@ This will test:
 
 30 images
 10 runs per method
-Grad CAM consistency
+Grad-CAM consistency
 LIME consistency
 SHAP consistency
 
