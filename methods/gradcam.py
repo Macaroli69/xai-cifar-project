@@ -19,7 +19,7 @@ class_names = [
 ]
 
 
-def show_gradcam(model, image_tensor, true_label):
+def get_gradcam_map(model, image_tensor):
     model.eval()
 
     # Add batch dimension
@@ -32,17 +32,16 @@ def show_gradcam(model, image_tensor, true_label):
     # Grad-CAM uses the last convolution layer
     gradcam = LayerGradCam(model, model.conv2)
 
-    # Create attribution map for the predicted class
+    # Create attribution map for predicted class
     attribution = gradcam.attribute(input_image, target=predicted_label)
 
-    # Resize attribution map so it matches the image size
+    # Resize attribution map so it matches image size
     upsampled_attr = LayerAttribution.interpolate(
         attribution,
         input_image.shape[2:]
     )
 
-    # Convert to numpy for plotting
-    image_np = input_image.squeeze().permute(1, 2, 0).detach().numpy()
+    # Convert to numpy
     heatmap = upsampled_attr.squeeze().detach().numpy()
 
     # Keep positive values only
@@ -51,6 +50,15 @@ def show_gradcam(model, image_tensor, true_label):
     # Normalize heatmap
     if heatmap.max() != 0:
         heatmap = heatmap / heatmap.max()
+
+    return heatmap, predicted_label
+
+
+def show_gradcam(model, image_tensor, true_label):
+    heatmap, predicted_label = get_gradcam_map(model, image_tensor)
+
+    # Convert image to numpy for plotting
+    image_np = image_tensor.permute(1, 2, 0).detach().numpy()
 
     plt.figure(figsize=(12, 4))
 

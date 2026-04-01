@@ -24,25 +24,20 @@ class_names = [
 segmenter = partial(slic, n_segments=20, compactness=1, sigma=1)
 
 
-def explain_with_lime(model, image_tensor, true_label):
+def get_lime_map(model, image_tensor):
     model.eval()
 
-    # Add batch dimension for model prediction
+    # Add batch dimension for prediction
     input_tensor = image_tensor.unsqueeze(0)
 
     # Convert tensor image to numpy image for LIME
-    # PyTorch: (C, H, W) -> LIME: (H, W, C)
     image_np = image_tensor.permute(1, 2, 0).numpy()
 
-    # LIME needs a prediction function that takes a batch of images
-    # shaped like (N, H, W, C) and returns class probabilities
+    # LIME prediction function
     def predict_fn(images_batch):
         model.eval()
 
-        # Convert numpy batch to torch tensor
         images_batch = torch.tensor(images_batch, dtype=torch.float32)
-
-        # Change shape from (N, H, W, C) to (N, C, H, W)
         images_batch = images_batch.permute(0, 3, 1, 2)
 
         with torch.no_grad():
@@ -50,6 +45,11 @@ def explain_with_lime(model, image_tensor, true_label):
             probs = torch.softmax(outputs, dim=1)
 
         return probs.numpy()
+
+    # Get model prediction
+    with torch.no_grad():
+        output = model(input_tensor)
+        predicted_label = torch.argmax(output, dim=1).item()
 
     # Create LIME explainer
     explainer = lime_image.LimeImageExplainer()
@@ -64,11 +64,6 @@ def explain_with_lime(model, image_tensor, true_label):
         segmentation_fn=segmenter
     )
 
-    # Get model prediction
-    with torch.no_grad():
-        output = model(input_tensor)
-        predicted_label = torch.argmax(output, dim=1).item()
-
     # Get highlighted image and mask
     temp, mask = explanation.get_image_and_mask(
         label=predicted_label,
@@ -77,7 +72,21 @@ def explain_with_lime(model, image_tensor, true_label):
         hide_rest=False
     )
 
-    # Display results
+    # Convert mask to float map so it can be compared later
+    lime_map = mask.astype(np.float32)
+
+    # Normalize to 0 to 1 if possible
+    if lime_map.max() != lime_map.min():
+        lime_map = (lime_map - lime_map.min()) / (lime_map.max() - lime_map.min())
+
+    return lime_map, temp, mask, predicted_label
+
+
+def explain_with_lime(model, image_tensor, true_label):
+    lime_map, temp, mask, predicted_label = get_lime_map(model, image_tensor)
+
+    image_np = image_tensor.permute(1, 2, 0).numpy()
+
     plt.figure(figsize=(12, 4))
 
     # Original image

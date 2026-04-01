@@ -18,19 +18,16 @@ class_names = [
 ]
 
 
-def explain_with_shap(model, image_tensor, true_label):
+def get_shap_map(model, image_tensor):
     model.eval()
 
-    # Convert tensor image to numpy image for SHAP
-    # PyTorch: (C, H, W) -> SHAP: (H, W, C)
+    # Convert tensor image to numpy image
     image_np = image_tensor.permute(1, 2, 0).numpy()
 
     # Add batch dimension for direct model prediction
     input_tensor = image_tensor.unsqueeze(0)
 
     # Prediction function for SHAP
-    # SHAP gives images in shape (N, H, W, C)
-    # model needs (N, C, H, W)
     def predict_fn(images_batch):
         images_batch = torch.tensor(images_batch, dtype=torch.float32)
         images_batch = images_batch.permute(0, 3, 1, 2)
@@ -41,36 +38,42 @@ def explain_with_shap(model, image_tensor, true_label):
 
         return probs.numpy()
 
-    # Get model prediction for this image
+    # Get model prediction
     with torch.no_grad():
         output = model(input_tensor)
         predicted_label = torch.argmax(output, dim=1).item()
 
-    # SHAP image masker
+    # SHAP masker
     masker = shap.maskers.Image("blur(8,8)", image_np.shape)
 
-    # Create explainer
+    # Create SHAP explainer
     explainer = shap.Explainer(predict_fn, masker)
 
     # Explain one image
-    # max_evals kept lower so runtime is manageable
     shap_values = explainer(
         image_np[np.newaxis, ...],
         max_evals=100,
         batch_size=50
     )
 
-    # SHAP values for the predicted class
+    # Get SHAP values for predicted class
     values = shap_values.values[0, :, :, :, predicted_label]
 
-    # Convert to a simpler heatmap by averaging color channels
+    # Turn 3-channel SHAP values into 2D heatmap
     heatmap = np.mean(np.abs(values), axis=2)
 
     # Normalize heatmap
     if heatmap.max() != 0:
         heatmap = heatmap / heatmap.max()
 
-    # Plot results
+    return heatmap, predicted_label
+
+
+def explain_with_shap(model, image_tensor, true_label):
+    heatmap, predicted_label = get_shap_map(model, image_tensor)
+
+    image_np = image_tensor.permute(1, 2, 0).numpy()
+
     plt.figure(figsize=(12, 4))
 
     # Original image
