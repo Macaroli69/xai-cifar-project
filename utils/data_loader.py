@@ -18,11 +18,11 @@ def load_data():
         root='./data', train=False, download=True, transform=transform)
 
     #Set random seed for reproducibility
-    random.seed(42)
+    random.seed(123)
 
-    #Choose random subset of data (Currently 5k Train, 1k Test)
-    train_indices = random.sample(range(len(trainset)), 5000)
-    test_indices = random.sample(range(len(testset)), 1000)
+    #Choose random subset of data (Currently 25k Train, 5k Test)
+    train_indices = random.sample(range(len(trainset)), 50000)
+    test_indices = random.sample(range(len(testset)), 10000)
 
     #Make smaller datssets using the indices
     small_train = Subset(trainset, train_indices)

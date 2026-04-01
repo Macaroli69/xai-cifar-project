@@ -1,9 +1,8 @@
 torch
 torchvision
+matplotlib
+numpy==1.26.4
 captum
 lime
 shap
-matplotlib
-numpy
-
-
+opencv-python==4.10.0.84

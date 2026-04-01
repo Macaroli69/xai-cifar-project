@@ -1,1 +1,5 @@
-data/ 
+data/
+.venv/
+__pycache__/
+saved_models/
+*.pyc
