@@ -4,6 +4,11 @@
 # 3. See how the model prediction changes
 # 4. Estimate how much each region contributes
 # 5. Show which parts of the image matter most
+#
+# IMPORTANT NOTE:
+# This version keeps the sign of SHAP values.
+# Positive values support the predicted class.
+# Negative values go against the predicted class.
 
 import numpy as np
 import torch
@@ -59,12 +64,15 @@ def get_shap_map(model, image_tensor):
     # Get SHAP values for predicted class
     values = shap_values.values[0, :, :, :, predicted_label]
 
-    # Turn 3-channel SHAP values into 2D heatmap
-    heatmap = np.mean(np.abs(values), axis=2)
+    # Keep sign information:
+    # positive = supports predicted class
+    # negative = goes against predicted class
+    heatmap = np.mean(values, axis=2)
 
-    # Normalize heatmap
-    if heatmap.max() != 0:
-        heatmap = heatmap / heatmap.max()
+    # Normalize to range [-1, 1]
+    max_abs = np.max(np.abs(heatmap))
+    if max_abs != 0:
+        heatmap = heatmap / max_abs
 
     return heatmap, predicted_label
 
@@ -82,19 +90,19 @@ def explain_with_shap(model, image_tensor, true_label):
     plt.title(f"Original\nTrue: {class_names[true_label]}")
     plt.axis("off")
 
-    # SHAP heatmap
+    # SHAP signed heatmap
     plt.subplot(1, 3, 2)
-    shap_plot = plt.imshow(heatmap, cmap="jet")
+    shap_plot = plt.imshow(heatmap, cmap="bwr", vmin=-1, vmax=1)
     plt.title(f"SHAP Heatmap\nPred: {class_names[predicted_label]}")
     plt.axis("off")
 
     cbar = plt.colorbar(shap_plot, fraction=0.046, pad=0.04)
-    cbar.set_label("Importance")
+    cbar.set_label("Contribution")
 
     # Overlay
     plt.subplot(1, 3, 3)
     plt.imshow(image_np)
-    plt.imshow(heatmap, cmap="jet", alpha=0.5)
+    plt.imshow(heatmap, cmap="bwr", vmin=-1, vmax=1, alpha=0.5)
     plt.title("Overlay")
     plt.axis("off")
 

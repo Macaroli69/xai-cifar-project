@@ -1,47 +1,74 @@
 # xai-cifar-project
 
-This project looks at how explainable AI methods can help show what a CNN is focusing on when it makes image classification predictions on CIFAR 10.
+This project explores how explainable AI (XAI) methods help visualize what a CNN is focusing on when making image classification predictions on the CIFAR-10 dataset.
 
-The model used is a simple CNN built in PyTorch. The explainability methods compared in this project are:
+The goal is not only to generate explanations, but also to evaluate how **consistent and stable** those explanations are across repeated runs.
 
-- Grad CAM
+---
+
+## Model
+The model used is a simple Convolutional Neural Network (CNN) built in PyTorch.
+
+It classifies images into 10 classes:
+airplane, automobile, bird, cat, deer, dog, frog, horse, ship, truck
+
+---
+
+## XAI Methods Compared
+The project compares four explanation methods:
+
+- Grad-CAM
 - LIME
+- Integrated Gradients
 - SHAP
 
-The project also includes a consistency evaluation script that runs each explanation method multiple times on the same images and compares how similar the explanation maps are.
+### SHAP Update
+SHAP explanations use **signed values**:
+- Positive values → support the predicted class
+- Negative values → go against the predicted class
+
+This provides more meaningful explanations than using only absolute importance.
+
+---
 
 ## Project Files
-
 - `main.py`  
-  Train the CNN or load a saved model, then show Grad CAM, LIME, and SHAP explanations on test images.
+  Runs the model and displays explanations for random test images.
 
 - `consistency_test.py`  
-  Run consistency testing for Grad CAM, LIME, and SHAP over multiple images and multiple runs.
+  Runs consistency evaluation across multiple images and multiple runs.
 
 - `model/cnn.py`  
-  Defines the simple CNN used for CIFAR 10 classification.
+  Defines the CNN model.
 
 - `utils/data_loader.py`  
-  Loads the CIFAR 10 dataset.
+  Loads CIFAR-10 and provides random sampling utilities.
 
 - `utils/train.py`  
-  Trains the CNN model.
+  Trains the model.
 
 - `utils/consistency_utils.py`  
-  Contains cosine similarity and average pairwise similarity functions for explanation comparison.
+  Contains similarity and overlap metrics used for consistency evaluation.
+
+- `utils/visualization.py`  
+  Displays combined explanation outputs for all methods.
 
 - `methods/gradcam.py`  
-  Generates Grad CAM heatmaps.
+  Grad-CAM implementation.
 
 - `methods/lime_explain.py`  
-  Generates LIME explanations.
+  LIME implementation.
 
 - `methods/shap_explain.py`  
-  Generates SHAP explanations.
+  SHAP implementation (signed heatmaps).
+
+- `methods/integrated_gradients.py`  
+  Integrated Gradients implementation.
+
+---
 
 ## Requirements
-
-Install dependencies with:
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
@@ -61,7 +88,9 @@ Type L to load the saved model
 
 If you train a model, it will be saved to:
 
+```bash
 saved_models/simple_cnn.pth
+```
 
 2. Run consistency testing
 
@@ -73,28 +102,88 @@ This will test:
 
 30 images
 10 runs per method
+
 Grad-CAM consistency
 LIME consistency
 SHAP consistency
+Integrated Gradients
 
-It also separates results into:
+## Consistency Evaluation
+The project evaluates consistency using two complementary metrics.
 
-all images
-correct predictions only
-incorrect predictions only
+1. Cosine Similarity (Global Consistency)
 
-## Consistency Method
+Each explanation map is flattened into a vector.
 
-Consistency is measured by comparing explanation maps from multiple runs of the same method on the same image.
+For each pair of runs:
 
-For each image, the explanation method is run multiple times. Then every pair of explanation maps is compared using cosine similarity.
+cosine similarity is computed
+all pairwise scores are averaged
+What it measures:
+Overall similarity of the full heatmap
+Whether the general explanation pattern stays the same
+Limitation:
+Does not focus on where the most important regions are
+Small spatial shifts may still appear very similar
 
-All pairwise similarity scores are averaged to get a final consistency score for that image.
+2. Top-K IoU Overlap (Region Consistency)
 
-A higher score means the method gives more similar explanations across runs, while a lower score means the explanations change more between runs.
+For each heatmap:
+
+top 10% most important pixels are selected
+converted into a binary mask
+
+For each pair of runs:
+
+Intersection over Union (IoU) is computed
+What it measures:
+Whether the same important regions are selected across runs
+Spatial stability of explanations
+Why this is important:
+
+Two heatmaps can look similar overall but highlight different exact regions.
+IoU captures this difference.
+
+## Why These Metrics Together Are Strong
+Using both metrics gives a more complete view of consistency:
+
+Cosine similarity → captures global similarity
+IoU overlap → captures spatial stability
+
+This combination allows us to distinguish between:
+
+Methods that look similar overall
+Methods that consistently highlight the same regions
+
+## Observed Behavior
+Typical results show:
+
+Grad-CAM → highly consistent (deterministic)
+Integrated Gradients → highly consistent
+SHAP → highly consistent in this implementation
+LIME → less consistent, especially in top-k regions
+
+LIME often shows:
+
+high cosine similarity (similar overall shape)
+lower IoU (different exact important regions)
+
+This suggests LIME explanations are:
+
+globally stable
+but locally less consistent
+
+## Key Takeaways
+Consistency does not mean correctness
+A method can be perfectly consistent but still produce poor explanations
+Stability is only one aspect of explanation quality
+
+This project focuses specifically on repeatability and stability of explanations, not their accuracy.
 
 ## Notes
-The dataset used is CIFAR 10
-The model is a simple CNN for classifying 10 image classes
-Grad CAM is deterministic, so it will usually have very high consistency
-LIME and SHAP can vary more depending on random sampling
+CIFAR-10 is used as the dataset
+The CNN is intentionally simple for fast experimentation
+Grad-CAM and Integrated Gradients are deterministic in this setup
+LIME introduces randomness due to sampling
+SHAP behaves deterministically under current settings
+

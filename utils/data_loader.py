@@ -1,3 +1,4 @@
+import random
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
@@ -30,3 +31,17 @@ def load_data(batch_size=32):
     testloader = DataLoader(testset, batch_size=batch_size, shuffle=False)
 
     return trainloader, testloader
+
+
+def get_random_images(dataset, num_images):
+    indices = random.sample(range(len(dataset)), num_images)
+
+    images = []
+    labels = []
+
+    for idx in indices:
+        image, label = dataset[idx]
+        images.append(image)
+        labels.append(label)
+
+    return images, labels

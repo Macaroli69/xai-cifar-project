@@ -1,27 +1,50 @@
 import os
 import torch
+import random
+import numpy as np
 
 from model.cnn import SimpleCNN
-from utils.data_loader import load_data
+from utils.data_loader import load_data, get_random_images
 from utils.train import train_model
-from methods.gradcam import show_gradcam
-from methods.lime_explain import explain_with_lime
-from methods.shap_explain import explain_with_shap
+from utils.visualization import show_combined_explanations
 
 MODEL_PATH = "saved_models/simple_cnn.pth"
 
+# Set to an integer like 42 for reproducibility
+# Set to None for different random images each run
+SEED = None
+
+
+def set_seed(seed):
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+
 
 def main():
-    # Step 1: Load dataset
-    trainloader, testloader = load_data()
+    # =========================
+    # 1. Optional reproducibility
+    # =========================
+    set_seed(SEED)
 
-    # Step 2: Create CNN model
+    # =========================
+    # 2. Load dataset
+    # =========================
+    trainloader, testloader = load_data()
+    testset = testloader.dataset
+
+    # =========================
+    # 3. Create model
+    # =========================
     model = SimpleCNN()
 
     # Make sure saved_models folder exists
     os.makedirs("saved_models", exist_ok=True)
 
-    # Step 3: Ask user whether to train a new model or load saved model
+    # =========================
+    # 4. Train or load model
+    # =========================
     choice = input("Type 'T' to train a new model or 'L' to use saved model: (T/L) ").strip().lower()
 
     if choice == "t":
@@ -31,12 +54,7 @@ def main():
         print(f"Model saved to {MODEL_PATH}")
 
     elif choice == "l":
-        if not os.path.exists(MODEL_PATH):
-            print(f"Saved model not found at {MODEL_PATH}")
-            print("Train the model first by choosing 'T'.")
-            return
-
-        model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device("cpu")))
+        model.load_state_dict(torch.load(MODEL_PATH))
         model.eval()
         print(f"Loaded model from {MODEL_PATH}")
 
@@ -44,26 +62,23 @@ def main():
         print("Invalid choice. Please type 'T' or 'L'.")
         return
 
-    # Step 4: Get one batch of test images
-    images, labels = next(iter(testloader))
-
-    # Show the next 3 images
+    # =========================
+    # 5. Pick random test images
+    # =========================
     num_images = 3
+    images, labels = get_random_images(testset, num_images)
 
+    # =========================
+    # 6. Show explanations
+    # =========================
     for i in range(num_images):
         print(f"\n--- Image {i + 1} ---")
 
         image_tensor = images[i]
-        true_label = labels[i].item()
+        true_label = labels[i]
 
-        print("Showing Grad-CAM visualization...")
-        show_gradcam(model, image_tensor, true_label)
-
-        print("Showing LIME explanation...")
-        explain_with_lime(model, image_tensor, true_label)
-
-        print("Showing SHAP explanation...")
-        explain_with_shap(model, image_tensor, true_label)
+        print("Showing combined explanations...")
+        show_combined_explanations(model, image_tensor, true_label)
 
 
 if __name__ == "__main__":
