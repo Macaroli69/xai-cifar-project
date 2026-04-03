@@ -261,14 +261,4 @@ This project focuses on **repeatability and stability**, not correctness.
 
 This project is nearing completion.
 
-Completed:
-
-* Model + all XAI methods implemented
-* Consistency metrics (cosine + IoU) implemented
-* Project structure cleaned
-
-Remaining:
-
-* Final analysis and write-up
-* Eventually runng all these test on tiny-Imagenet data set (higher resolution images 64x64)
-```
+Comp

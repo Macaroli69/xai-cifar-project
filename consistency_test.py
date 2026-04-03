@@ -1,7 +1,9 @@
 import os
+import io
 import torch
 import numpy as np
 import random
+from contextlib import redirect_stdout, redirect_stderr
 
 from model.cnn import SimpleCNN
 from utils.data_loader import load_data
@@ -16,8 +18,8 @@ MODEL_PATH = "saved_models/simple_cnn.pth"
 # Change these values to test more or fewer images and runs per image
 # More images are generally better for more reliable results compared to runs
 # Keep in mind this scales as O(n^2), so 100 runs would be 10,000 comparisons per image
-NUM_IMAGES = 30
-NUM_RUNS = 10
+NUM_IMAGES = 100
+NUM_RUNS = 7
 
 # Top percentage of most important pixels used for IoU overlap
 TOP_PERCENT = 0.10
@@ -56,7 +58,32 @@ def collect_test_images(testloader, num_images):
     return collected_images, collected_labels
 
 
+def run_with_optional_output(func, full_mode=True):
+    if full_mode:
+        return func()
+
+    buffer = io.StringIO()
+    with redirect_stdout(buffer), redirect_stderr(buffer):
+        return func()
+
+
+def choose_output_mode():
+    choice = input("Choose output mode: 'F' for fast mode or 'L' for full mode: (F/L) ").strip().lower()
+
+    if choice == "f":
+        print("Running in fast mode...")
+        return False
+    elif choice == "l":
+        print("Running in full mode...")
+        return True
+    else:
+        print("Invalid choice. Defaulting to fast mode...")
+        return False
+
+
 def main():
+    full_mode = choose_output_mode()
+
     trainloader, testloader = load_data()
 
     model = SimpleCNN()
@@ -152,8 +179,9 @@ def main():
         gradcam_cosine_scores.append(gradcam_cosine)
         gradcam_iou_scores.append(gradcam_iou)
 
-        print(f"Grad-CAM cosine consistency:      {gradcam_cosine:.4f}")
-        print(f"Grad-CAM top-k IoU consistency:   {gradcam_iou:.4f}")
+        if full_mode:
+            print(f"Grad-CAM cosine consistency:      {gradcam_cosine:.4f}")
+            print(f"Grad-CAM top-k IoU consistency:   {gradcam_iou:.4f}")
 
         if is_correct:
             gradcam_cosine_correct_scores.append(gradcam_cosine)
@@ -170,7 +198,10 @@ def main():
             random.seed(None)
             np.random.seed(None)
 
-            lime_map, _, _, _ = get_lime_map(model, image_tensor)
+            lime_map, _, _, _ = run_with_optional_output(
+                lambda: get_lime_map(model, image_tensor),
+                full_mode=full_mode
+            )
             lime_maps.append(lime_map)
 
         lime_cosine = average_pairwise_similarity(lime_maps)
@@ -179,8 +210,9 @@ def main():
         lime_cosine_scores.append(lime_cosine)
         lime_iou_scores.append(lime_iou)
 
-        print(f"LIME cosine consistency:          {lime_cosine:.4f}")
-        print(f"LIME top-k IoU consistency:       {lime_iou:.4f}")
+        if full_mode:
+            print(f"LIME cosine consistency:          {lime_cosine:.4f}")
+            print(f"LIME top-k IoU consistency:       {lime_iou:.4f}")
 
         if is_correct:
             lime_cosine_correct_scores.append(lime_cosine)
@@ -203,8 +235,9 @@ def main():
         ig_cosine_scores.append(ig_cosine)
         ig_iou_scores.append(ig_iou)
 
-        print(f"Integrated Gradients cosine:      {ig_cosine:.4f}")
-        print(f"Integrated Gradients top-k IoU:   {ig_iou:.4f}")
+        if full_mode:
+            print(f"Integrated Gradients cosine:      {ig_cosine:.4f}")
+            print(f"Integrated Gradients top-k IoU:   {ig_iou:.4f}")
 
         if is_correct:
             ig_cosine_correct_scores.append(ig_cosine)
@@ -221,7 +254,10 @@ def main():
             random.seed(None)
             np.random.seed(None)
 
-            heatmap, _ = get_shap_map(model, image_tensor)
+            heatmap, _ = run_with_optional_output(
+                lambda: get_shap_map(model, image_tensor),
+                full_mode=full_mode
+            )
             shap_maps.append(heatmap)
 
         shap_cosine = average_pairwise_similarity(shap_maps)
@@ -230,8 +266,22 @@ def main():
         shap_cosine_scores.append(shap_cosine)
         shap_iou_scores.append(shap_iou)
 
-        print(f"SHAP cosine consistency:          {shap_cosine:.4f}")
-        print(f"SHAP top-k IoU consistency:       {shap_iou:.4f}")
+        if full_mode:
+            print(f"SHAP cosine consistency:          {shap_cosine:.4f}")
+            print(f"SHAP top-k IoU consistency:       {shap_iou:.4f}")
+        else:
+            print(
+                f"Cosine -> Grad-CAM: {gradcam_cosine:.4f}, "
+                f"LIME: {lime_cosine:.4f}, "
+                f"IG: {ig_cosine:.4f}, "
+                f"SHAP: {shap_cosine:.4f}"
+            )
+            print(
+                f"Top-k IoU -> Grad-CAM: {gradcam_iou:.4f}, "
+                f"LIME: {lime_iou:.4f}, "
+                f"IG: {ig_iou:.4f}, "
+                f"SHAP: {shap_iou:.4f}"
+            )
 
         if is_correct:
             shap_cosine_correct_scores.append(shap_cosine)

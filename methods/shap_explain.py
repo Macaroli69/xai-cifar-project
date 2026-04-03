@@ -9,7 +9,16 @@
 # This version keeps the sign of SHAP values.
 # Positive values support the predicted class.
 # Negative values go against the predicted class.
+#
+# To introduce variation across runs, this version slightly randomizes:
+# - the blur masker size
+# - the SHAP evaluation budget
+#
+# This keeps SHAP closer to the image-based explanation style that fits
+# this project better, while avoiding the instability from flattening the
+# full image into thousands of raw features for SamplingExplainer.
 
+import random
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
@@ -27,29 +36,35 @@ def get_shap_map(model, image_tensor):
     model.eval()
 
     # Convert tensor image to numpy image
-    image_np = image_tensor.permute(1, 2, 0).numpy()
+    image_np = image_tensor.permute(1, 2, 0).detach().numpy().astype(np.float32)
 
     # Add batch dimension for direct model prediction
     input_tensor = image_tensor.unsqueeze(0)
 
     # Prediction function for SHAP
     def predict_fn(images_batch):
-        images_batch = torch.tensor(images_batch, dtype=torch.float32)
-        images_batch = images_batch.permute(0, 3, 1, 2)
+        images_batch = np.array(images_batch, dtype=np.float32)
+        images_batch = torch.tensor(images_batch, dtype=torch.float32).permute(0, 3, 1, 2)
 
         with torch.no_grad():
             outputs = model(images_batch)
             probs = torch.softmax(outputs, dim=1)
 
-        return probs.numpy()
+        return probs.cpu().numpy()
 
     # Get model prediction
     with torch.no_grad():
         output = model(input_tensor)
         predicted_label = torch.argmax(output, dim=1).item()
 
+    # Randomize blur size slightly to introduce variation across runs
+    blur_size = random.choice([4, 6, 8])
+
+    # Randomize evaluation budget slightly to introduce variation across runs
+    max_evals = random.choice([80, 100, 120])
+
     # SHAP masker
-    masker = shap.maskers.Image("blur(8,8)", image_np.shape)
+    masker = shap.maskers.Image(f"blur({blur_size},{blur_size})", image_np.shape)
 
     # Create SHAP explainer
     explainer = shap.Explainer(predict_fn, masker)
@@ -57,11 +72,12 @@ def get_shap_map(model, image_tensor):
     # Explain one image
     shap_values = explainer(
         image_np[np.newaxis, ...],
-        max_evals=100,
+        max_evals=max_evals,
         batch_size=50
     )
 
-    # Get SHAP values for predicted class
+    # SHAP output shape for image explanations is typically:
+    # (batch, height, width, channels, classes)
     values = shap_values.values[0, :, :, :, predicted_label]
 
     # Keep sign information:
@@ -80,7 +96,7 @@ def get_shap_map(model, image_tensor):
 def explain_with_shap(model, image_tensor, true_label):
     heatmap, predicted_label = get_shap_map(model, image_tensor)
 
-    image_np = image_tensor.permute(1, 2, 0).numpy()
+    image_np = image_tensor.permute(1, 2, 0).detach().numpy()
 
     plt.figure(figsize=(12, 4))
 
