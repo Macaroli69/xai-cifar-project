@@ -114,6 +114,42 @@ This will evaluate:
 
 ---
 
+## Configuration Options
+
+You can adjust key parts of the project to control behavior and runtime.
+
+---
+
+**main.py**
+- `SEED = None`  
+  - Set to a number (e.g., 42) for reproducible image selection  
+- `num_images = 3`  
+  - Number of images shown in output  
+
+---
+
+**consistency_test.py**
+- `NUM_IMAGES = 30` → Number of test images  
+- `NUM_RUNS = 10` → Repeats per method (higher = slower but more accurate)  
+- `TOP_PERCENT = 0.10` → % of important pixels used for IoU  
+
+---
+
+**methods/lime_explain.py**
+- `num_samples=1000` → LIME sampling size (higher = more stable, slower)
+
+---
+
+**methods/shap_explain.py**
+- `max_evals=100` → SHAP evaluation budget (higher = more precise, slower)
+
+---
+
+These settings let you balance:
+- speed vs accuracy  
+- reproducibility vs randomness  
+- coarse vs detailed explanations  
+
 ## Consistency Evaluation
 
 The project evaluates consistency using **two complementary metrics**.
