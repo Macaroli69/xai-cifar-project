@@ -12,7 +12,7 @@ The model used is a simple Convolutional Neural Network (CNN) built in PyTorch.
 
 It classifies images into 10 classes:
 
-- airplane  
+- airplane
 - automobile  
 - bird  
 - cat  
@@ -41,7 +41,12 @@ SHAP explanations use **signed values**:
 - Positive values → support the predicted class  
 - Negative values → go against the predicted class  
 
-This provides more meaningful explanations than using only absolute importance.
+Additionally, SHAP is evaluated under **slightly varying approximation settings** (such as masking and evaluation parameters).  
+
+This introduces controlled variability across runs, allowing SHAP to be compared more fairly with sampling-based methods like LIME in consistency experiments.  
+
+The core SHAP method is unchanged, but this setup reflects how explanation stability behaves under different approximation conditions.
+---
 
 ---
 
@@ -97,7 +102,6 @@ The model will be saved to:
 ```bash
 saved_models/simple_cnn.pth
 ```
-
 ---
 
 ### 2. Run Consistency Testing
@@ -105,6 +109,10 @@ saved_models/simple_cnn.pth
 ```bash
 python consistency_test.py
 ```
+You will be prompted:
+
+* `F` → Fast mode (reduced output, cleaner terminal)
+* `L` → Full mode (detailed output + progress bars)
 
 This will evaluate:
 
@@ -122,7 +130,7 @@ You can adjust key parts of the project to control behavior and runtime.
 
 **main.py**
 - `SEED = None`  
-  - Set to a number (e.g., 42) for reproducible image selection  
+  - Set to a number (e.g., 42) for reproducible image selection  or to None for randomness
 - `num_images = 3`  
   - Number of images shown in output  
 
@@ -220,20 +228,9 @@ Typical results show:
 
 * **Grad-CAM** → highly consistent (deterministic)
 * **Integrated Gradients** → highly consistent
-* **SHAP** → highly consistent in this implementation
+* **SHAP** → less consistent in this implementation
 * **LIME** → less consistent, especially in top-k regions
 
-### LIME Behavior
-
-LIME often shows:
-
-* High cosine similarity (similar overall shape)
-* Lower IoU (different exact regions)
-
-This suggests:
-
-* Globally stable explanations
-* Locally unstable important regions
 
 ---
 
