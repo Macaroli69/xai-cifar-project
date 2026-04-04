@@ -1,23 +1,22 @@
 import os
-import io
 import torch
-import numpy as np
-import random
-from contextlib import redirect_stdout, redirect_stderr
 
 from model.cnn import SimpleCNN
 from utils.data_loader import load_data
-from methods.gradcam import get_gradcam_map
-from methods.lime_explain import get_lime_map
-from methods.integrated_gradients import get_integrated_gradients_map
-from methods.shap_explain import get_shap_map
-from utils.consistency_utils import average_pairwise_similarity, average_pairwise_iou
+from utils.consistency_runner import (
+    collect_test_images,
+    run_gradcam_consistency,
+    run_lime_consistency,
+    run_ig_consistency,
+    run_shap_consistency,
+    safe_mean
+)
+from utils.results_saver import save_summary_csv, save_detailed_csv
+from utils.consistency_display import print_image_results, print_final_summary
 
 MODEL_PATH = "saved_models/simple_cnn.pth"
 
 # Change these values to test more or fewer images and runs per image
-# More images are generally better for more reliable results compared to runs
-# Keep in mind this scales as O(n^2), so 100 runs would be 10,000 comparisons per image
 NUM_IMAGES = 100
 NUM_RUNS = 7
 
@@ -31,58 +30,9 @@ class_names = [
 ]
 
 
-def safe_mean(values):
-    if len(values) == 0:
-        return None
-    return float(np.mean(values))
-
-
-def format_score(value):
-    if value is None:
-        return "N/A"
-    return f"{value:.4f}"
-
-
-def collect_test_images(testloader, num_images):
-    collected_images = []
-    collected_labels = []
-
-    for batch_images, batch_labels in testloader:
-        for image, label in zip(batch_images, batch_labels):
-            collected_images.append(image)
-            collected_labels.append(label.item())
-
-            if len(collected_images) == num_images:
-                return collected_images, collected_labels
-
-    return collected_images, collected_labels
-
-
-def run_with_optional_output(func, full_mode=True):
-    if full_mode:
-        return func()
-
-    buffer = io.StringIO()
-    with redirect_stdout(buffer), redirect_stderr(buffer):
-        return func()
-
-
-def choose_output_mode():
-    choice = input("Choose output mode: 'F' for fast mode or 'L' for full mode: (F/L) ").strip().lower()
-
-    if choice == "f":
-        print("Running in fast mode...")
-        return False
-    elif choice == "l":
-        print("Running in full mode...")
-        return True
-    else:
-        print("Invalid choice. Defaulting to fast mode...")
-        return False
-
-
 def main():
-    full_mode = choose_output_mode()
+    print(f"Running Consistency Test")
+    print(f"Using {NUM_IMAGES} Images. And {NUM_RUNS} Runs per Image.")
 
     trainloader, testloader = load_data()
 
@@ -103,36 +53,35 @@ def main():
         print(f"Only found {len(images)} test images, not {NUM_IMAGES}")
         return
 
-    # =========================
-    # Cosine similarity scores
-    # =========================
+    detailed_results = []
+
+    # All images
     gradcam_cosine_scores = []
     lime_cosine_scores = []
     ig_cosine_scores = []
     shap_cosine_scores = []
 
-    gradcam_cosine_correct_scores = []
-    lime_cosine_correct_scores = []
-    ig_cosine_correct_scores = []
-    shap_cosine_correct_scores = []
-
-    gradcam_cosine_incorrect_scores = []
-    lime_cosine_incorrect_scores = []
-    ig_cosine_incorrect_scores = []
-    shap_cosine_incorrect_scores = []
-
-    # =========================
-    # Top-k IoU scores
-    # =========================
     gradcam_iou_scores = []
     lime_iou_scores = []
     ig_iou_scores = []
     shap_iou_scores = []
 
+    # Correct only
+    gradcam_cosine_correct_scores = []
+    lime_cosine_correct_scores = []
+    ig_cosine_correct_scores = []
+    shap_cosine_correct_scores = []
+
     gradcam_iou_correct_scores = []
     lime_iou_correct_scores = []
     ig_iou_correct_scores = []
     shap_iou_correct_scores = []
+
+    # Incorrect only
+    gradcam_cosine_incorrect_scores = []
+    lime_cosine_incorrect_scores = []
+    ig_cosine_incorrect_scores = []
+    shap_cosine_incorrect_scores = []
 
     gradcam_iou_incorrect_scores = []
     lime_iou_incorrect_scores = []
@@ -143,10 +92,6 @@ def main():
     incorrect_count = 0
 
     for i in range(NUM_IMAGES):
-        print("\n========================================")
-        print(f"Testing Image {i + 1}/{NUM_IMAGES}")
-        print("========================================")
-
         image_tensor = images[i]
         true_label = labels[i]
 
@@ -156,143 +101,88 @@ def main():
 
         is_correct = predicted_label == true_label
 
-        print(f"True label:      {class_names[true_label]}")
-        print(f"Predicted label: {class_names[predicted_label]}")
-        print(f"Correct?         {is_correct}")
-
         if is_correct:
             correct_count += 1
         else:
             incorrect_count += 1
 
-        # =========================
-        # Grad-CAM
-        # =========================
-        gradcam_maps = []
-        for run in range(NUM_RUNS):
-            heatmap, _ = get_gradcam_map(model, image_tensor)
-            gradcam_maps.append(heatmap)
+        gradcam_cosine, gradcam_iou = run_gradcam_consistency(
+            model, image_tensor, NUM_RUNS, TOP_PERCENT
+        )
+        lime_cosine, lime_iou = run_lime_consistency(
+            model, image_tensor, NUM_RUNS, TOP_PERCENT
+        )
+        ig_cosine, ig_iou = run_ig_consistency(
+            model, image_tensor, NUM_RUNS, TOP_PERCENT
+        )
+        shap_cosine, shap_iou = run_shap_consistency(
+            model, image_tensor, NUM_RUNS, TOP_PERCENT
+        )
 
-        gradcam_cosine = average_pairwise_similarity(gradcam_maps)
-        gradcam_iou = average_pairwise_iou(gradcam_maps, top_percent=TOP_PERCENT)
-
+        # Save all-image scores
         gradcam_cosine_scores.append(gradcam_cosine)
-        gradcam_iou_scores.append(gradcam_iou)
-
-        if full_mode:
-            print(f"Grad-CAM cosine consistency:      {gradcam_cosine:.4f}")
-            print(f"Grad-CAM top-k IoU consistency:   {gradcam_iou:.4f}")
-
-        if is_correct:
-            gradcam_cosine_correct_scores.append(gradcam_cosine)
-            gradcam_iou_correct_scores.append(gradcam_iou)
-        else:
-            gradcam_cosine_incorrect_scores.append(gradcam_cosine)
-            gradcam_iou_incorrect_scores.append(gradcam_iou)
-
-        # =========================
-        # LIME
-        # =========================
-        lime_maps = []
-        for run in range(NUM_RUNS):
-            random.seed(None)
-            np.random.seed(None)
-
-            lime_map, _, _, _ = run_with_optional_output(
-                lambda: get_lime_map(model, image_tensor),
-                full_mode=full_mode
-            )
-            lime_maps.append(lime_map)
-
-        lime_cosine = average_pairwise_similarity(lime_maps)
-        lime_iou = average_pairwise_iou(lime_maps, top_percent=TOP_PERCENT)
-
         lime_cosine_scores.append(lime_cosine)
-        lime_iou_scores.append(lime_iou)
-
-        if full_mode:
-            print(f"LIME cosine consistency:          {lime_cosine:.4f}")
-            print(f"LIME top-k IoU consistency:       {lime_iou:.4f}")
-
-        if is_correct:
-            lime_cosine_correct_scores.append(lime_cosine)
-            lime_iou_correct_scores.append(lime_iou)
-        else:
-            lime_cosine_incorrect_scores.append(lime_cosine)
-            lime_iou_incorrect_scores.append(lime_iou)
-
-        # =========================
-        # Integrated Gradients
-        # =========================
-        ig_maps = []
-        for run in range(NUM_RUNS):
-            heatmap, _ = get_integrated_gradients_map(model, image_tensor)
-            ig_maps.append(heatmap)
-
-        ig_cosine = average_pairwise_similarity(ig_maps)
-        ig_iou = average_pairwise_iou(ig_maps, top_percent=TOP_PERCENT)
-
         ig_cosine_scores.append(ig_cosine)
-        ig_iou_scores.append(ig_iou)
-
-        if full_mode:
-            print(f"Integrated Gradients cosine:      {ig_cosine:.4f}")
-            print(f"Integrated Gradients top-k IoU:   {ig_iou:.4f}")
-
-        if is_correct:
-            ig_cosine_correct_scores.append(ig_cosine)
-            ig_iou_correct_scores.append(ig_iou)
-        else:
-            ig_cosine_incorrect_scores.append(ig_cosine)
-            ig_iou_incorrect_scores.append(ig_iou)
-
-        # =========================
-        # SHAP
-        # =========================
-        shap_maps = []
-        for run in range(NUM_RUNS):
-            random.seed(None)
-            np.random.seed(None)
-
-            heatmap, _ = run_with_optional_output(
-                lambda: get_shap_map(model, image_tensor),
-                full_mode=full_mode
-            )
-            shap_maps.append(heatmap)
-
-        shap_cosine = average_pairwise_similarity(shap_maps)
-        shap_iou = average_pairwise_iou(shap_maps, top_percent=TOP_PERCENT)
-
         shap_cosine_scores.append(shap_cosine)
+
+        gradcam_iou_scores.append(gradcam_iou)
+        lime_iou_scores.append(lime_iou)
+        ig_iou_scores.append(ig_iou)
         shap_iou_scores.append(shap_iou)
 
-        if full_mode:
-            print(f"SHAP cosine consistency:          {shap_cosine:.4f}")
-            print(f"SHAP top-k IoU consistency:       {shap_iou:.4f}")
-        else:
-            print(
-                f"Cosine -> Grad-CAM: {gradcam_cosine:.4f}, "
-                f"LIME: {lime_cosine:.4f}, "
-                f"IG: {ig_cosine:.4f}, "
-                f"SHAP: {shap_cosine:.4f}"
-            )
-            print(
-                f"Top-k IoU -> Grad-CAM: {gradcam_iou:.4f}, "
-                f"LIME: {lime_iou:.4f}, "
-                f"IG: {ig_iou:.4f}, "
-                f"SHAP: {shap_iou:.4f}"
-            )
-
+        # Save correct / incorrect groups
         if is_correct:
+            gradcam_cosine_correct_scores.append(gradcam_cosine)
+            lime_cosine_correct_scores.append(lime_cosine)
+            ig_cosine_correct_scores.append(ig_cosine)
             shap_cosine_correct_scores.append(shap_cosine)
+
+            gradcam_iou_correct_scores.append(gradcam_iou)
+            lime_iou_correct_scores.append(lime_iou)
+            ig_iou_correct_scores.append(ig_iou)
             shap_iou_correct_scores.append(shap_iou)
         else:
+            gradcam_cosine_incorrect_scores.append(gradcam_cosine)
+            lime_cosine_incorrect_scores.append(lime_cosine)
+            ig_cosine_incorrect_scores.append(ig_cosine)
             shap_cosine_incorrect_scores.append(shap_cosine)
+
+            gradcam_iou_incorrect_scores.append(gradcam_iou)
+            lime_iou_incorrect_scores.append(lime_iou)
+            ig_iou_incorrect_scores.append(ig_iou)
             shap_iou_incorrect_scores.append(shap_iou)
 
-    # =========================
-    # Final averages - cosine
-    # =========================
+        detailed_results.append([
+            i + 1,
+            class_names[true_label],
+            class_names[predicted_label],
+            is_correct,
+            gradcam_cosine,
+            lime_cosine,
+            ig_cosine,
+            shap_cosine,
+            gradcam_iou,
+            lime_iou,
+            ig_iou,
+            shap_iou
+        ])
+
+        print_image_results(
+            image_num=i + 1,
+            total_images=NUM_IMAGES,
+            true_label=class_names[true_label],
+            predicted_label=class_names[predicted_label],
+            is_correct=is_correct,
+            gradcam_cosine=gradcam_cosine,
+            lime_cosine=lime_cosine,
+            ig_cosine=ig_cosine,
+            shap_cosine=shap_cosine,
+            gradcam_iou=gradcam_iou,
+            lime_iou=lime_iou,
+            ig_iou=ig_iou,
+            shap_iou=shap_iou
+        )
+
     overall_gradcam_cosine = safe_mean(gradcam_cosine_scores)
     overall_lime_cosine = safe_mean(lime_cosine_scores)
     overall_ig_cosine = safe_mean(ig_cosine_scores)
@@ -308,9 +198,6 @@ def main():
     incorrect_ig_cosine = safe_mean(ig_cosine_incorrect_scores)
     incorrect_shap_cosine = safe_mean(shap_cosine_incorrect_scores)
 
-    # =========================
-    # Final averages - IoU
-    # =========================
     overall_gradcam_iou = safe_mean(gradcam_iou_scores)
     overall_lime_iou = safe_mean(lime_iou_scores)
     overall_ig_iou = safe_mean(ig_iou_scores)
@@ -326,51 +213,81 @@ def main():
     incorrect_ig_iou = safe_mean(ig_iou_incorrect_scores)
     incorrect_shap_iou = safe_mean(shap_iou_incorrect_scores)
 
-    print("\n========================================")
-    print("FINAL AVERAGE CONSISTENCY")
-    print("========================================")
-    print(f"Total images tested: {NUM_IMAGES}")
-    print(f"Correct predictions: {correct_count}")
-    print(f"Incorrect predictions: {incorrect_count}")
-    print(f"Top-k percent used for IoU: {int(TOP_PERCENT * 100)}%")
-    print("========================================")
+    print_final_summary(
+        num_images=NUM_IMAGES,
+        correct_count=correct_count,
+        incorrect_count=incorrect_count,
+        top_percent=TOP_PERCENT,
+        overall_gradcam_cosine=overall_gradcam_cosine,
+        overall_lime_cosine=overall_lime_cosine,
+        overall_ig_cosine=overall_ig_cosine,
+        overall_shap_cosine=overall_shap_cosine,
+        overall_gradcam_iou=overall_gradcam_iou,
+        overall_lime_iou=overall_lime_iou,
+        overall_ig_iou=overall_ig_iou,
+        overall_shap_iou=overall_shap_iou,
+        correct_gradcam_cosine=correct_gradcam_cosine,
+        correct_lime_cosine=correct_lime_cosine,
+        correct_ig_cosine=correct_ig_cosine,
+        correct_shap_cosine=correct_shap_cosine,
+        correct_gradcam_iou=correct_gradcam_iou,
+        correct_lime_iou=correct_lime_iou,
+        correct_ig_iou=correct_ig_iou,
+        correct_shap_iou=correct_shap_iou,
+        incorrect_gradcam_cosine=incorrect_gradcam_cosine,
+        incorrect_lime_cosine=incorrect_lime_cosine,
+        incorrect_ig_cosine=incorrect_ig_cosine,
+        incorrect_shap_cosine=incorrect_shap_cosine,
+        incorrect_gradcam_iou=incorrect_gradcam_iou,
+        incorrect_lime_iou=incorrect_lime_iou,
+        incorrect_ig_iou=incorrect_ig_iou,
+        incorrect_shap_iou=incorrect_shap_iou
+    )
 
-    print("\nALL IMAGES - COSINE SIMILARITY")
-    print(f"Grad-CAM:             {format_score(overall_gradcam_cosine)}")
-    print(f"LIME:                 {format_score(overall_lime_cosine)}")
-    print(f"Integrated Gradients: {format_score(overall_ig_cosine)}")
-    print(f"SHAP:                 {format_score(overall_shap_cosine)}")
+    save_choice = input("\nSave results to CSV? (y/n): ").strip().lower()
 
-    print("\nALL IMAGES - TOP-K IoU")
-    print(f"Grad-CAM:             {format_score(overall_gradcam_iou)}")
-    print(f"LIME:                 {format_score(overall_lime_iou)}")
-    print(f"Integrated Gradients: {format_score(overall_ig_iou)}")
-    print(f"SHAP:                 {format_score(overall_shap_iou)}")
+    if save_choice == "y":
+        summary_filename = save_summary_csv(
+            num_images=NUM_IMAGES,
+            num_runs=NUM_RUNS,
+            overall_gradcam_cosine=overall_gradcam_cosine,
+            overall_lime_cosine=overall_lime_cosine,
+            overall_ig_cosine=overall_ig_cosine,
+            overall_shap_cosine=overall_shap_cosine,
+            overall_gradcam_iou=overall_gradcam_iou,
+            overall_lime_iou=overall_lime_iou,
+            overall_ig_iou=overall_ig_iou,
+            overall_shap_iou=overall_shap_iou,
+            correct_gradcam_cosine=correct_gradcam_cosine,
+            correct_lime_cosine=correct_lime_cosine,
+            correct_ig_cosine=correct_ig_cosine,
+            correct_shap_cosine=correct_shap_cosine,
+            correct_gradcam_iou=correct_gradcam_iou,
+            correct_lime_iou=correct_lime_iou,
+            correct_ig_iou=correct_ig_iou,
+            correct_shap_iou=correct_shap_iou,
+            incorrect_gradcam_cosine=incorrect_gradcam_cosine,
+            incorrect_lime_cosine=incorrect_lime_cosine,
+            incorrect_ig_cosine=incorrect_ig_cosine,
+            incorrect_shap_cosine=incorrect_shap_cosine,
+            incorrect_gradcam_iou=incorrect_gradcam_iou,
+            incorrect_lime_iou=incorrect_lime_iou,
+            incorrect_ig_iou=incorrect_ig_iou,
+            incorrect_shap_iou=incorrect_shap_iou,
+            correct_count=correct_count,
+            incorrect_count=incorrect_count
+        )
 
-    print("\nCORRECT PREDICTIONS ONLY - COSINE SIMILARITY")
-    print(f"Grad-CAM:             {format_score(correct_gradcam_cosine)}")
-    print(f"LIME:                 {format_score(correct_lime_cosine)}")
-    print(f"Integrated Gradients: {format_score(correct_ig_cosine)}")
-    print(f"SHAP:                 {format_score(correct_shap_cosine)}")
+        detailed_filename = save_detailed_csv(
+            num_images=NUM_IMAGES,
+            num_runs=NUM_RUNS,
+            detailed_results=detailed_results
+        )
 
-    print("\nCORRECT PREDICTIONS ONLY - TOP-K IoU")
-    print(f"Grad-CAM:             {format_score(correct_gradcam_iou)}")
-    print(f"LIME:                 {format_score(correct_lime_iou)}")
-    print(f"Integrated Gradients: {format_score(correct_ig_iou)}")
-    print(f"SHAP:                 {format_score(correct_shap_iou)}")
-
-    print("\nINCORRECT PREDICTIONS ONLY - COSINE SIMILARITY")
-    print(f"Grad-CAM:             {format_score(incorrect_gradcam_cosine)}")
-    print(f"LIME:                 {format_score(incorrect_lime_cosine)}")
-    print(f"Integrated Gradients: {format_score(incorrect_ig_cosine)}")
-    print(f"SHAP:                 {format_score(incorrect_shap_cosine)}")
-
-    print("\nINCORRECT PREDICTIONS ONLY - TOP-K IoU")
-    print(f"Grad-CAM:             {format_score(incorrect_gradcam_iou)}")
-    print(f"LIME:                 {format_score(incorrect_lime_iou)}")
-    print(f"Integrated Gradients: {format_score(incorrect_ig_iou)}")
-    print(f"SHAP:                 {format_score(incorrect_shap_iou)}")
-    print("========================================")
+        print(f"\nSaved summary results to: {summary_filename}")
+        print(f"Saved detailed results to: {detailed_filename}")
+    else:
+        print("Results were not saved.")
 
 
 if __name__ == "__main__":

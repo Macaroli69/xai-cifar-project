@@ -13,15 +13,15 @@ The model used is a simple Convolutional Neural Network (CNN) built in PyTorch.
 It classifies images into 10 classes:
 
 - airplane
-- automobile  
-- bird  
-- cat  
-- deer  
-- dog  
-- frog  
-- horse  
-- ship  
-- truck  
+- automobile
+- bird
+- cat
+- deer
+- dog
+- frog
+- horse
+- ship
+- truck
 
 ---
 
@@ -109,16 +109,39 @@ saved_models/simple_cnn.pth
 ```bash
 python consistency_test.py
 ```
-You will be prompted:
 
-* `F` → Fast mode (reduced output, cleaner terminal)
-* `L` → Full mode (detailed output + progress bars)
+This will run consistency evaluation using:
 
-This will evaluate:
-
-* 30 images
-* 10 runs per method
+* 100 images 
+* 7 runs per method
 * All four XAI methods
+
+---
+
+### 3. Saving Results
+After the test finishes, you will be prompted:
+```bash
+Save results to CSV? (y/n):
+```
+If you choose yes, two files will be created:
+```bash
+consistency_summary_MM-DD-YYYY_HH-MM-SS.csv
+```
+
+* Contains final average consistency scores for each method
+
+```bash
+consistency_detailed_MM-DD-YYYY_HH-MM-SS.csv
+```
+
+* Contains per-image results including:
+- true label
+- predicted label
+- correctness
+- cosine similarity scores
+- top-k IoU scores
+
+These files include a timestamp to prevent overwriting previous runs and allow easy comparison between experiments.
 
 ---
 
@@ -257,5 +280,3 @@ This project focuses on **repeatability and stability**, not correctness.
 ## Project Status
 
 This project is nearing completion.
-
-Comp
