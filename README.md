@@ -326,4 +326,4 @@ Overall, differences between methods are more significant than differences betwe
 
 ## Project Status
 
-This project is nearing completion.
+This project is complete.
